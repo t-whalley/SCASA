@@ -1,62 +1,133 @@
-# SCASA: Shape Complementarity and Surface Area
+# SCASA: Shape Complementarity and Available Surface Area
+
+SCASA is a Python package for calculating two geometric properties of protein complexes from PDB files: Shape Complementarity (SC) and Available/Buried Surface Area (ASA/BSA). It can be used as a standalone command-line tool or imported as a Python module.
+
+---
 
 ## What is Shape Complementarity?
-Shape Complementarity (SC) [(Lawrence and Colman, 1993)](https://pubmed.ncbi.nlm.nih.gov/8263940/) is a measure of "goodness of fit" between two protein interfaces. 
-It ranges from 0 to 1, where 1 is maximum compatibility. It relies on the relative shape of the two interfaces between each other. It has been utilised to explore the
-relation ship between antibody/T-cell receptor and antigen.
 
-## What is (buried or available) surface area?
- Buried Surface Area (BSA; reviewed by [Ali et al., 2014](https://pubmed.ncbi.nlm.nih.gov/24678666/)) is a geometric quantity that measures to total surface area (in
-Å<sup>2</sup>) of a complex buried within another complex.  Available Surface Area (ASA) is the reciprocal; 
- that is, the total surface area accesible. This calculation of accessibility is generally calcualted in relation
-to solvent acessible surface area (SASA). SASA imagines that a ball of a given radius is rolling along the surface ofthe protein of interest.
-If there is sufficient geometric space to allow the solvent to pass unimpeded it said to be accessible.
+Shape Complementarity (SC) [(Lawrence and Colman, 1993)](https://pubmed.ncbi.nlm.nih.gov/8263940/) is a measure of the geometric "goodness of fit" between two protein interfaces. It ranges from 0 to 1, where values closer to 1 indicate tightly complementary surfaces. It has been widely used to characterise the quality of antibody/antigen and T-cell receptor/antigen interfaces.
 
-This tool calculates ASA by using the Shrake Ruplley algorithm implemented in Biopython. It then computes BSA
-by calculating the ASA of the complex of interest unbound to the other complexes in the structure and comparing the two numbers.
+SC is computed by:
+1. Selecting the interface atoms from each complex (those within a distance threshold of the opposing surface)
+2. Generating surface dots by randomly sampling a ConvexHull triangulation of each interface
+3. Estimating a surface normal at each dot via PCA on its 10 nearest dot-cloud neighbours
+4. For each dot on surface A, finding the nearest dot on surface B and computing the dot product of their normals
+5. The final SC score is the mean of the medians of S(A→B) and S(B→A)
 
-## What is the scope of this tool?
-This tools is designed to be used as both a standalone tool and a module to be imported.
+### Comparison with CCP4 SC
+
+SCASA SC scores are systematically higher than those produced by the CCP4 `sc` program by approximately 0.05–0.15. This is expected and is a consequence of the surface representation used:
+
+- **CCP4 SC** uses [MSMS](https://ccsb.scripps.edu/msms/) to generate a true solvent-accessible molecular surface with ~1 Å dot spacing, accurately representing concave interface regions
+- **SCASA** uses a ConvexHull triangulation of the interface atom coordinates, which is convex by definition and therefore cannot represent inward-curving regions of the interface
+
+The scores are not directly numerically comparable to CCP4 SC, but SCASA scores are consistent and valid for **relative comparisons** — ranking interfaces, comparing variants, or tracking changes between structures. For example, 1FYT (Ab-Ag) gives ~0.65 in SCASA vs ~0.56 in CCP4 SC.
+
+If absolute agreement with CCP4 SC is required, MSMS-based surface generation would need to be integrated as an external dependency.
+
+## What is (Buried or Available) Surface Area?
+
+Buried Surface Area (BSA; reviewed by [Ali et al., 2014](https://pubmed.ncbi.nlm.nih.gov/24678666/)) measures the total surface area (in Å²) of a complex that becomes buried upon binding to another complex. Available Surface Area (ASA) is the reciprocal — the total surface area remaining accessible to solvent.
+
+Accessibility is defined relative to the solvent-accessible surface area (SASA), which imagines a probe sphere (representing a solvent molecule) rolling along the protein surface. Any region where the probe can pass unimpeded is considered accessible.
+
+SCASA calculates ASA using the Shrake-Rupley algorithm implemented in Biopython. BSA is then derived by comparing the ASA of each complex in isolation against its ASA when bound.
+
+---
 
 ## Installation
-```pip3 install .```
+
+Requires Python ≥ 3.9.
+
+```bash
+pip install .
+```
+
+---
 
 ## Usage
 
-### Standalone Tool
-There are two functions ```SCASA sc```, which calculates SC and ```SCASA asa``` which calculates ASA. There are 3 common argumemnts:
+### Command-line tool
 
-```
-  --pdb INFILE, -P INFILE
-                        PDB file of a complex
-  --complex_1 COMPLEX_1, -C1 COMPLEX_1
-                        Chains of first complex, corresponding to the chains in the PDB file. If supplying
-                        multiple chains they must be a single uninterrupted chain e.g. --complex_1 ABC
-  --complex_2 COMPLEX_2, -C2 COMPLEX_2
-                        Chains of first complex, corresponding to the chains in the PDB file. If not supplied the
-                        default would be all remaining chains
-  --level ASA_LEVEL, -L ASA_LEVEL
-```
+SCASA provides two subcommands: `sc` for shape complementarity and `asa` for surface area.
 
-The specific flags for ```sc``` are:
-```
-  --distance DISTANCE, -D DISTANCE
-                        Distance parameter used for generating an interface between the two surfaces. Atoms with
-                        no neighbours within this range are excluded
-```
+#### Common arguments (both subcommands)
 
-The specific flags for ```sc``` are:
-```
-  --level ASA_LEVEL, -L ASA_LEVEL
-                        Level to calculate ASA and BSA to. They can be 'S' for complex, 'C' for chain 'R' for
-                        residue, or 'A' for atom
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--pdb` | `-P` | Yes | Path to PDB file of the complex |
+| `--complex_1` | `-C1` | Yes | Chains of the first complex (e.g. `DE` or `ABC`). Multiple chains must be supplied as a single concatenated string |
+| `--complex_2` | `-C2` | No | Chains of the second complex. Defaults to all remaining chains in the PDB file |
+| `--verbose` | `-v` | No | Print additional progress messages |
+
+#### `SCASA sc` — Shape Complementarity
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--distance` | `-D` | `8.0` | Interface cutoff in Å. Atoms with no neighbour within this distance of the opposing surface are excluded |
+| `--dot-density` | `-Dd` | `1.5` | Surface dot sampling density (dots per Å² of interface area) |
+| `--plot` | `-pl` | — | Generate a histogram plot of the SC function distribution |
+
+Example:
+```bash
+SCASA sc --pdb test/data/1FYT.pdb --complex_1 DE --complex_2 ABC
 ```
 
-So to run sc an example command line argument would be: ```SCASA sc --pdb test/data/1FYT.pdb --complex_1 DE --complex_2 CAB --distance 4.0```. and
-an example for asa would be ```SCASA asa --pdb test/data/1FYT.pdb --complex_1 DE --complex_2 CAB --level R```.
+#### `SCASA asa` — Available/Buried Surface Area
 
-### Module
-SCASA can be imported as a module using ```import scasa```.
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--level` | `-L` | `R` | Granularity of output: `S` (whole complex), `C` (per chain), `R` (per residue), or `A` (per atom) |
+
+Example:
+```bash
+SCASA asa --pdb test/data/1FYT.pdb --complex_1 DE --complex_2 ABC --level R
+```
+
+---
+
+### Python module
+
+SCASA can be imported and used directly in Python via the `Complex` class:
+
+```python
+from scasa.scasa import Complex
+
+complex = Complex(
+    pdb_file="test/data/1FYT.pdb",
+    complex_1="DE",
+    complex_2="ABC",   # optional — defaults to all remaining chains
+    distance=8.0,      # interface cutoff in Å
+    density=1.5,       # dot sampling density per Å²
+    verbose=True,
+)
+
+# Calculate shape complementarity
+complex.sc()
+
+# Calculate ASA/BSA (requires sub-PDB files written to tmp/)
+complex.create_sub_pdbs()
+complex.complex_sasa()
+```
+
+---
+
+## Interpreting SC scores
+
+As a rough guide based on published literature:
+
+| SC score (SCASA) | Interpretation |
+|------------------|---------------|
+| 0.70 – 0.80 | Tightly complementary (e.g. antibody–antigen) |
+| 0.60 – 0.70 | Typical protein–protein interface |
+| 0.45 – 0.60 | Loosely packed or transient complex |
+| < 0.45 | Poor fit; may indicate a crystal contact rather than a biological interface |
+
+Note: these ranges are specific to SCASA's surface representation. Equivalent CCP4 SC values will be approximately 0.05–0.15 lower.
+
+---
 
 ## Contact
+
 [Tom Whalley](mailto:whalleyt@cardiff.ac.uk)
