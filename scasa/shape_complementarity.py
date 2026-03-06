@@ -27,7 +27,8 @@ class PDBCoords:
 
 class ShapeComplementarity:
     """
-    Shape Complementarity implementation based on Lawrence & Colman (1993).
+    Shape Complementarity implementation based on Lawrence & Colman (1993)
+    but with some python library shortcuts
 
     Reference:
         Lawrence, M.C. & Colman, P.M. (1993) J. Mol. Biol. 234:946-950
@@ -40,7 +41,6 @@ class ShapeComplementarity:
         self.weight    = None
         self.complex_1 = None
         self.complex_2 = None
-        self.plot      = None
         self.arg       = arg
         super().__init__(self.arg)
 
@@ -128,16 +128,9 @@ class ShapeComplementarity:
 
         mask[list(set(indices))] = True
 
-        return PDBCoords(
-            coords     = a.coords[mask],
-            amino_acids= list(compress(a.amino_acids, mask)),
-            atoms      = list(compress(a.atoms,       mask)),
-            residues   = list(compress(a.residues,    mask)),
-        )
+        return PDBCoords(coords = a.coords[mask], amino_acids = list(compress(a.amino_acids, mask)),
+                         atoms = list(compress(a.atoms, mask)), residues = list(compress(a.residues, mask)))
 
-    # -----------------------------------------------------------------------
-    # Surface mesh and dot sampling
-    # -----------------------------------------------------------------------
 
     def create_polygon(self, points):
         """
@@ -332,16 +325,6 @@ class ShapeComplementarity:
             print(f"SC = {sc_score:.2f}")
         else:
             print(f"{sc_score:.2f}")
-
-        if self.plot:
-            for p in [
-                self.plot_atoms(complex1.coords, complex2.coords, "Interface atoms"),
-                self.plot_combined_mesh(simplices_c1, simplices_c2, complex1.coords, complex2.coords),
-                self.plot_single_mesh(simplices_c1, complex1.coords, "Surface of Complex 1"),
-                self.plot_single_mesh(simplices_c2, complex2.coords, "Surface of Complex 2"),
-                self.plot_atoms(points_c1, points_c2, "Sampled surface dots"),
-            ]:
-                p.show()
 
         return sc_score
 
