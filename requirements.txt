@@ -1,6 +1,9 @@
-pybind11
-Bio==1.5.9
-biopython==1.80
-numpy==1.24.1
-pandas==2.0.0
-scipy==1.11.1
+pybind11>=2.11.0
+biopython>=1.81
+numpy>=1.26.0
+pandas>=2.1.0
+scipy>=1.11.4
+scikit-learn>=1.3.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
+plotly>=5.18.0
