@@ -67,7 +67,6 @@ SCASA provides two subcommands: `sc` for shape complementarity and `asa` for sur
 |------|-------|---------|-------------|
 | `--distance` | `-D` | `8.0` | Interface cutoff in Å. Atoms with no neighbour within this distance of the opposing surface are excluded |
 | `--dot-density` | `-Dd` | `1.5` | Surface dot sampling density (dots per Å² of interface area) |
-| `--plot` | `-pl` | — | Generate a histogram plot of the SC function distribution |
 
 Example:
 ```bash
