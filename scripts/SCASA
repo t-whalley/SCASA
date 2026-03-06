@@ -10,7 +10,7 @@ def main():
     # set up class for complex
 
     pdb_complex = scasa.Complex(args.infile, args.complex_1, args.complex_2, verbose=args.verbose,
-                            distance=args.distance, weight=args.weight, plot=args.plot)
+                            distance=args.distance, plot=args.plot)
     if args.command == "asa":
         pdb_complex.create_sub_pdbs()
         pdb_complex.complex_sasa()

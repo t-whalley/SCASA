@@ -24,7 +24,7 @@ class Complex(SurfaceArea, ShapeComplementarity):
     """
 
     def __init__(self, pdb_file, complex_1, complex_2=None, verbose=False, tmp_directory="/tmp", distance=8,
-                 density=1.5, weight=0.5, plot=False):
+                 density=1.5, weight=0.0, plot=False):
         super().__init__()
         self.pdb_ranges = {"ATOM": range(0, 4),
                            "SERIAL": range(6, 11),
@@ -54,6 +54,7 @@ class Complex(SurfaceArea, ShapeComplementarity):
         self.distance = distance
         self.weight = weight
         self.plot = plot
+        self.probe = 1.7
 
         # for time being assume pdb file is .pdb
         # todo change extension pattern
