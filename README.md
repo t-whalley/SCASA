@@ -17,14 +17,14 @@ SC is computed by:
 
 ### Comparison with CCP4 SC
 
-SCASA SC scores are systematically higher than those produced by the CCP4 `sc` program by approximately 0.05–0.15. This is expected and is a consequence of the surface representation used:
+SCASA SC scores are systematically higher than those produced by the CCP4 `sc` program by approximately 0.05–0.15. This is expected and is a consequence of differences in surface generation:
 
-- **CCP4 SC** uses [MSMS](https://ccsb.scripps.edu/msms/) to generate a true solvent-accessible molecular surface with ~1 Å dot spacing, accurately representing concave interface regions
-- **SCASA** uses a ConvexHull triangulation of the interface atom coordinates, which is convex by definition and therefore cannot represent inward-curving regions of the interface
+- **CCP4 SC** uses the [Connolly molecular surface](https://doi.org/10.1126/science.220.4598.1174) (also called the solvent-excluded surface), computed via Connolly's `mds` routine. This accurately represents concave re-entrant regions of the interface — the inward-curving patches where a probe sphere rolls between adjacent atoms — at a default density of 15 dots/Å²
+- **SCASA** uses a ConvexHull triangulation of the interface atom coordinates at 1.5 dots/Å². A ConvexHull is convex by definition so it cannot represent re-entrant regions, and the lower dot density gives coarser normal estimation
 
-The scores are not directly numerically comparable to CCP4 SC, but SCASA scores are consistent and valid for **relative comparisons** — ranking interfaces, comparing variants, or tracking changes between structures. For example, 1FYT (Ab-Ag) gives ~0.65 in SCASA vs ~0.56 in CCP4 SC.
+No Python library currently exposes Connolly or Shrake-Rupley surface dot *coordinates* (as opposed to integrated SASA scalar values), so matching CCP4 SC numerically would require implementing the Connolly surface from scratch.
 
-If absolute agreement with CCP4 SC is required, MSMS-based surface generation would need to be integrated as an external dependency.
+The scores are not directly numerically comparable to CCP4 SC, but SCASA scores are consistent and valid for **relative comparisons** — ranking interfaces, comparing variants, or tracking changes between structures. For example, 1FYT gives ~0.65 in SCASA vs ~0.56 in CCP4 SC.
 
 ## What is (Buried or Available) Surface Area?
 
@@ -67,6 +67,7 @@ SCASA provides two subcommands: `sc` for shape complementarity and `asa` for sur
 |------|-------|---------|-------------|
 | `--distance` | `-D` | `8.0` | Interface cutoff in Å. Atoms with no neighbour within this distance of the opposing surface are excluded |
 | `--dot-density` | `-Dd` | `1.5` | Surface dot sampling density (dots per Å² of interface area) |
+| `--plot` | `-pl` | — | Generate a histogram plot of the SC function distribution |
 
 Example:
 ```bash
