@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import logging
+
 from scasa import scasa
 from scasa import cli
 
@@ -7,10 +9,13 @@ from scasa import cli
 def main():
     args = cli.parse_args()
 
-    # set up class for complex
+    logging.basicConfig(
+        level=logging.INFO if args.verbose else logging.WARNING,
+        format="%(message)s",
+    )
 
-    pdb_complex = scasa.Complex(args.infile, args.complex_1, args.complex_2, verbose=args.verbose,
-                            distance=args.distance, plot=args.plot)
+    pdb_complex = scasa.Complex(args.infile, args.complex_1, args.complex_2,
+                                distance=args.distance, plot=args.plot)
     if args.command == "asa":
         pdb_complex.create_sub_pdbs()
         pdb_complex.complex_sasa()

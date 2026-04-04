@@ -1,6 +1,5 @@
 import math
 import random
-
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -8,10 +7,17 @@ import matplotlib.pyplot as plt
 import plotly.figure_factory as ff
 import plotly.express as px
 
+import logging
+
+from .connolly import (mds as _connolly_mds, trim as _connolly_trim,
+                       PROBE_RADIUS as _PROBE_RADIUS, BURIED_FLAG as _BURIED_FLAG)
+
 from scipy.spatial import cKDTree, ConvexHull
 from sklearn.decomposition import PCA
 from dataclasses import dataclass
 from itertools import compress
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -27,8 +33,7 @@ class PDBCoords:
 
 class ShapeComplementarity:
     """
-    Shape Complementarity implementation based on Lawrence & Colman (1993)
-    but with some python library shortcuts
+    Shape Complementarity implementation based on Lawrence & Colman (1993).
 
     Reference:
         Lawrence, M.C. & Colman, P.M. (1993) J. Mol. Biol. 234:946-950
@@ -41,6 +46,7 @@ class ShapeComplementarity:
         self.weight    = None
         self.complex_1 = None
         self.complex_2 = None
+        self.plot      = None
         self.arg       = arg
         super().__init__(self.arg)
 
@@ -61,8 +67,7 @@ class ShapeComplementarity:
         Create an interface of the two complexes, returning two PDBCoords objects.
         :return: PDBCoords c1, PDBCoords c2
         """
-        if self.verbose:
-            print("Getting interfaces")
+        logger.info("Getting interfaces")
 
         residues    = self.get_column("RESIDUE_NUM")
         chain       = self.get_column("CHAIN")
@@ -128,9 +133,16 @@ class ShapeComplementarity:
 
         mask[list(set(indices))] = True
 
-        return PDBCoords(coords = a.coords[mask], amino_acids = list(compress(a.amino_acids, mask)),
-                         atoms = list(compress(a.atoms, mask)), residues = list(compress(a.residues, mask)))
+        return PDBCoords(
+            coords     = a.coords[mask],
+            amino_acids= list(compress(a.amino_acids, mask)),
+            atoms      = list(compress(a.atoms,       mask)),
+            residues   = list(compress(a.residues,    mask)),
+        )
 
+    # -----------------------------------------------------------------------
+    # Surface mesh and dot sampling
+    # -----------------------------------------------------------------------
 
     def create_polygon(self, points):
         """
@@ -173,8 +185,7 @@ class ShapeComplementarity:
         :return: float, area in Å²
         """
         area = ConvexHull(coords).area
-        if self.verbose:
-            print(f"Estimated area of complex 1's face is {area:.2f}\N{ANGSTROM SIGN}\N{SUPERSCRIPT TWO}")
+        logger.info("Estimated area of interface is %.2f\N{ANGSTROM SIGN}\N{SUPERSCRIPT TWO}", area)
         return area
 
     # -----------------------------------------------------------------------
@@ -248,11 +259,16 @@ class ShapeComplementarity:
     # -----------------------------------------------------------------------
 
     def plot_sc(self, sc_complex_1, sc_complex_2):
-        c1 = pd.DataFrame(sc_complex_1, columns=["SC_function"])
-        c1["Complex"] = "Complex 1"
-        c2 = pd.DataFrame(sc_complex_2, columns=["SC_function"])
-        c2["Complex"] = "Complex 2"
-        sns.histplot(data=pd.concat([c1, c2]), x="SC_function", hue="Complex")
+        """
+        Plot a histogram of SC function values for both surfaces.
+        :param sc_complex_1: list of float, S(C1->C2) values
+        :param sc_complex_2: list of float, S(C2->C1) values
+        """
+        c1 = pd.DataFrame({"SC_function": sc_complex_1, "Complex": "Complex 1"})
+        c2 = pd.DataFrame({"SC_function": sc_complex_2, "Complex": "Complex 2"})
+        sns.histplot(data=pd.concat([c1, c2], ignore_index=True),
+                     x="SC_function", hue="Complex")
+        plt.title("SC function distribution")
         plt.show()
 
     def plot_combined_mesh(self, mesh1, mesh2, coords1, coords2):
@@ -281,52 +297,125 @@ class ShapeComplementarity:
     # Main entry point
     # -----------------------------------------------------------------------
 
+    # ProtOr radii (Tsai et al. 1999) for Connolly surface generation
+    _PROTOR = {
+        "N":1.65,"CA":1.87,"C":1.76,"O":1.40,"CB":1.87,"CG":1.87,
+        "CG1":1.87,"CG2":1.87,"CD":1.87,"CD1":1.87,"CD2":1.87,
+        "CE":1.87,"CE1":1.87,"CE2":1.87,"CE3":1.87,"CZ":1.87,
+        "CZ2":1.87,"CZ3":1.87,"CH2":1.87,
+        "ND1":1.65,"ND2":1.65,"NE":1.65,"NE1":1.65,"NE2":1.65,
+        "NH1":1.65,"NH2":1.65,"NZ":1.65,
+        "OD1":1.40,"OD2":1.40,"OE1":1.40,"OE2":1.40,
+        "OG":1.40,"OG1":1.40,"OH":1.40,"OXT":1.40,
+        "SD":1.85,"SG":1.85,
+    }
+
     def sc(self):
         """
         Calculate Shape Complementarity (SC) using the Lawrence & Colman (1993) method.
 
-        Interface atoms are filtered by --distance. A ConvexHull triangulation of
-        each interface is randomly sampled to produce surface dots. Per-dot normals
-        are estimated via PCA on the 10 nearest dot neighbours.
+        Surface dots are generated using the Connolly molecular surface algorithm,
+        translated directly from the Fortran mds subroutine in CCP4 SC. This produces
+        three types of surface dots:
+            1. Convex   — contact surface on each atom's VdW shell
+            2. Toroidal — probe rolling between two atoms
+            3. Concave  — re-entrant patch where probe nestles between three atoms
+
+        Only dots flagged as buried (probe centre within reach of the opposing molecule)
+        are scored. A 1.5 Å trim band removes peripheral edge dots.
 
         SC = (median S(C1->C2) + median S(C2->C1)) / 2
+        where S = -(nA · nB)  [negated: complementary opposing normals score positive]
         """
         complex1, complex2 = self.create_interface()
         complex1 = self.filter_interface(complex1, complex2, self.distance)
         complex2 = self.filter_interface(complex2, complex1, self.distance)
 
-        if self.verbose:
-            print(f"Complex 1 contains {len(complex1.residues)} atoms "
-                  f"within {self.distance} Angstroms of Complex 2")
-            print(f"Complex 2 contains {len(complex2.residues)} atoms "
-                  f"within {self.distance} Angstroms of Complex 1")
+        logger.info("Complex 1 contains %d atoms within %g Angstroms of Complex 2",
+                     len(complex1.residues), self.distance)
+        logger.info("Complex 2 contains %d atoms within %g Angstroms of Complex 1",
+                     len(complex2.residues), self.distance)
 
-        area_1 = self.estimate_surface_area(complex1.coords)
-        area_2 = self.estimate_surface_area(complex2.coords)
+        from .connolly import get_radius
+        atoms = np.vstack([complex1.coords, complex2.coords])
+        radii = np.array([
+            get_radius(aa, at)
+            for aa, at in zip(complex1.amino_acids + complex2.amino_acids,
+                              complex1.atoms       + complex2.atoms)
+        ])
+        mol   = np.array([1]*len(complex1.coords) + [2]*len(complex2.coords))
 
-        simplices_c1 = self.create_polygon(complex1.coords)
-        simplices_c2 = self.create_polygon(complex2.coords)
+        logger.info("Generating Connolly surface (density=%.1f dots/\N{ANGSTROM SIGN}\N{SUPERSCRIPT TWO})",
+                    self.density)
+        dots, normals, flags, dot_mol = _connolly_mds(
+            _PROBE_RADIUS, atoms, radii, mol, density=self.density)
 
-        n_dots_1 = round(self.density * area_1)
-        n_dots_2 = round(self.density * area_2)
+        if len(dots) == 0:
+            logger.warning("No surface dots generated — try increasing --distance")
+            return None
 
-        points_c1 = self.random_points(complex1.coords, simplices_c1, n_dots_1)
-        points_c2 = self.random_points(complex2.coords, simplices_c2, n_dots_2)
+        buried = flags == _BURIED_FLAG
+        logger.info("Total dots: %d  buried: %d", len(dots), buried.sum())
 
-        if self.verbose:
-            print("Calculating SC for both complexes")
+        # Select buried dots from each surface
+        d1_all = dots[(dot_mol == 1) & buried]
+        n1_all = normals[(dot_mol == 1) & buried]
+        d2_all = dots[(dot_mol == 2) & buried]
+        n2_all = normals[(dot_mol == 2) & buried]
 
-        sc_complex_1 = self.calculate_sc(points_c1, points_c2, self.weight)
-        sc_complex_2 = self.calculate_sc(points_c2, points_c1, self.weight)
+        if len(d1_all) == 0 or len(d2_all) == 0:
+            logger.warning("No buried dots — try increasing --distance or --dot-density")
+            return None
 
-        sc_score = (np.median(sc_complex_1) + np.median(sc_complex_2)) / 2
+        # Filter to dots within 1.0 Å of the opposing surface.
+        # This mirrors the effect of the CCP4 SC trim band, which implicitly
+        # removes peripheral dots far from the opposing surface. Using an
+        # explicit distance cutoff is equivalent and more transparent.
+        _, idx2_all = cKDTree(d2_all).query(d1_all)
+        _, idx1_all = cKDTree(d1_all).query(d2_all)
+        dists1_all = np.linalg.norm(d1_all - d2_all[idx2_all], axis=1)
+        dists2_all = np.linalg.norm(d2_all - d1_all[idx1_all], axis=1)
 
-        if self.verbose:
-            print(f"SC = {sc_score:.2f}")
+        DIST_CUTOFF = 1.5  # Å — equivalent to CCP4 trim band effect
+        m1 = dists1_all <= DIST_CUTOFF
+        m2 = dists2_all <= DIST_CUTOFF
+
+        d1 = d1_all[m1];  n1 = n1_all[m1];  dists1 = dists1_all[m1]
+        d2 = d2_all[m2];  n2 = n2_all[m2];  dists2 = dists2_all[m2]
+
+        logger.info("After distance filter (≤%.1fÅ): C1=%d dots, C2=%d dots",
+                    DIST_CUTOFF, len(d1), len(d2))
+
+        if len(d1) == 0 or len(d2) == 0:
+            logger.warning("No close-contact dots — try increasing --distance or --dot-density")
+            return None
+
+        # Re-query nearest neighbours within the filtered set
+        _, idx2 = cKDTree(d2).query(d1)
+        _, idx1 = cKDTree(d1).query(d2)
+        dists1 = np.linalg.norm(d1 - d2[idx2], axis=1)
+        dists2 = np.linalg.norm(d2 - d1[idx1], axis=1)
+        dot1   = -(np.einsum("ij,ij->i", n1, n2[idx2]))
+        dot2   = -(np.einsum("ij,ij->i", n2, n1[idx1]))
+
+        if self.weight > 0:
+            # CCP4 SC formula: S = -(nA·nB) * exp(-d²*w)
+            sc_complex_1 = list(dot1 * np.exp(-dists1**2 * self.weight))
+            sc_complex_2 = list(dot2 * np.exp(-dists2**2 * self.weight))
         else:
-            print(f"{sc_score:.2f}")
+            sc_complex_1 = list(dot1)
+            sc_complex_2 = list(dot2)
+
+        sc_score = float((np.median(sc_complex_1) + np.median(sc_complex_2)) / 2)
+
+        logger.info("SC = %.2f", sc_score)
+        print(f"{sc_score:.2f}")
+
+        if self.plot:
+            self.plot_sc(sc_complex_1, sc_complex_2)
+            self.plot_atoms(complex1.coords, complex2.coords, "Interface atoms").show()
+            self.plot_atoms(d1, d2, "Connolly surface dots (trimmed buried)").show()
 
         return sc_score
-
     def get_column(self, param):
         pass

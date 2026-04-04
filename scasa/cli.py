@@ -43,8 +43,10 @@ def parse_args():
     sc.add_argument("--distance", "-D", dest="distance", type=float, default=8.0, required=False,
                     help="Distance parameter used for generating an interface between the two surfaces. Atoms with"
                          " no neighbours within this range are excluded")
-    sc.add_argument("--dot-density", "-Dd", dest="density", type=float, default=1.5, required=False,
+    sc.add_argument("--dot-density", "-Dd", dest="density", type=float, default=15.0, required=False,
                     help="Density sampling value per Angstrom of area of the interface")
+    sc.add_argument("--plot", "-pl", dest="plot", action="store_true",
+                    help="Flag. If supplied then a plot of the SC function will be generated")
     sc.add_argument("--verbose", "-v", dest="verbose", action="store_true",
                     help="Flag. If supplied, extra messages will be printed")
 

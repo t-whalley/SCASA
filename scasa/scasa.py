@@ -1,5 +1,9 @@
+import logging
+
 from .available_surface_area import SurfaceArea
 from .shape_complementarity import ShapeComplementarity
+
+logger = logging.getLogger(__name__)
 
 from pathlib import Path
 
@@ -20,11 +24,10 @@ class Complex(SurfaceArea, ShapeComplementarity):
     PDBFile: path to PDB file
     Complex1: Complex of chains, supplied as a string
     Complex2: As Complex1, but if left as None, it will be assumed to be all remaining chains in PDBFile - Complex1
-    Verbose: Extra logging
     """
 
-    def __init__(self, pdb_file, complex_1, complex_2=None, verbose=False, tmp_directory="/tmp", distance=8,
-                 density=1.5, weight=0.0, plot=False):
+    def __init__(self, pdb_file, complex_1, complex_2=None, tmp_directory="/tmp", distance=8,
+                 density=15.0, weight=0.5, plot=False):
         super().__init__()
         self.pdb_ranges = {"ATOM": range(0, 4),
                            "SERIAL": range(6, 11),
@@ -46,7 +49,6 @@ class Complex(SurfaceArea, ShapeComplementarity):
         self.complex_1 = complex_1
         self.complex_2 = complex_2
         self.chains = None
-        self.verbose = verbose
         self.tmp_directory = tmp_directory
 
         # variables inherited from SC
@@ -67,10 +69,9 @@ class Complex(SurfaceArea, ShapeComplementarity):
         self.complex_2_asa_df = None
         self.complex_1_2_asa_df = None
 
-        if self.verbose:
-            print("PDB successfully validated")
-            print(f"Complex 1: {''.join(self.complex_1)}")
-            print(f"Complex 2: {''.join(self.complex_2)}")
+        logger.info("PDB successfully validated")
+        logger.info("Complex 1: %s", ''.join(self.complex_1))
+        logger.info("Complex 2: %s", ''.join(self.complex_2))
 
     def verify_chains(self):
         """
@@ -123,8 +124,7 @@ class Complex(SurfaceArea, ShapeComplementarity):
         """
         chains = set(self.get_column("CHAIN"))
         self.chains = sorted(list(set(chains)))
-        if self.verbose:
-            print(f"PDB file contains chains: {self.chains}")
+        logger.info("PDB file contains chains: %s", self.chains)
 
     def chain_string_to_list(self):
         """

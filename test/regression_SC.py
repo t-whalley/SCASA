@@ -26,9 +26,7 @@ import os
 import pytest
 
 # Absolute tolerance between SCASA SC and CCP4 SC reference values.
-# SCASA scores are typically 0.05–0.15 higher than CCP4 SC due to the
-# ConvexHull surface approximation.
-TOLERANCE = 0.15
+TOLERANCE = 0.05
 
 DATA_DIR    = os.path.join(os.path.dirname(__file__), "data")
 VALUES_DIR  = os.path.join(DATA_DIR, "values")
@@ -157,7 +155,7 @@ def test_sc_regression(pdb_id, pdb_file, chain_info, ref_sc):
         pdb_file=pdb_file,
         complex_1=tcr,
         complex_2=other,
-        verbose=False,
+
     )
     sc = complex_obj.sc()
 
