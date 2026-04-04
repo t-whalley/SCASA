@@ -376,7 +376,7 @@ class ShapeComplementarity:
         dists1_all = np.linalg.norm(d1_all - d2_all[idx2_all], axis=1)
         dists2_all = np.linalg.norm(d2_all - d1_all[idx1_all], axis=1)
 
-        DIST_CUTOFF = 1.5  # Å — equivalent to CCP4 trim band effect
+        DIST_CUTOFF = 1.4  # Å — equivalent to CCP4 trim band effect
         m1 = dists1_all <= DIST_CUTOFF
         m2 = dists2_all <= DIST_CUTOFF
 
